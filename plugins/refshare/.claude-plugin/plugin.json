@@ -1,0 +1,6 @@
+{
+  "name": "refshare",
+  "version": "0.1.0",
+  "description": "Manage and share a personal library of references (sites, tools, services, resources) via chat, email, or any channel.",
+  "keywords": ["references", "sharing", "knowledge-base"]
+}

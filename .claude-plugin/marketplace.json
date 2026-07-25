@@ -1,0 +1,14 @@
+{
+  "name": "draku",
+  "owner": {
+    "name": "John Trammel"
+  },
+  "plugins": [
+    {
+      "name": "refshare",
+      "source": "./plugins/refshare",
+      "description": "Manage and share a personal library of references (sites, tools, services, resources) via chat, email, or any channel.",
+      "version": "0.1.0"
+    }
+  ]
+}
