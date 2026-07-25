@@ -62,12 +62,17 @@ assert_missing "$DEST/docs"
 assert_missing "$DEST/CONTRIBUTING.md"
 
 # --- Test 4: invalid plugin name is rejected without touching the filesystem ---
+# Plant a sentinel file in the marketplace root to catch any filesystem mutations
+echo "sentinel" > "$FAKE_MARKETPLACE/sentinel.txt"
+
 if "$FAKE_MARKETPLACE/scripts/sync-plugin.sh" "$FAKE_DEV_REPO" "../evil" 2>/dev/null; then
   echo "FAIL: expected sync-plugin.sh to reject a plugin name containing '..'"
   FAILURES=$((FAILURES + 1))
 fi
 assert_missing "$FAKE_MARKETPLACE/plugins/evil"
 assert_missing "$FAKE_MARKETPLACE/../evil"
+# Verify the sentinel file was NOT deleted (if validation happened after rm -rf, it would be)
+assert_exists "$FAKE_MARKETPLACE/sentinel.txt"
 
 # --- Test 5: missing dev repo is rejected ---
 if "$FAKE_MARKETPLACE/scripts/sync-plugin.sh" "/nonexistent-dir-xyz" fake-plugin 2>/dev/null; then
