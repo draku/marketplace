@@ -14,7 +14,7 @@ from freeform `tags` (topical labels like `devtool`, `creative-writing`).
 Invoke the CLI as:
 
 ```bash
-"$CLAUDE_PLUGIN_ROOT/scripts/refshare_cli.py" <command> [flags]
+python3 "$CLAUDE_PLUGIN_ROOT/scripts/refshare_cli.py" <command> [flags]
 ```
 
 Always pass `--json` when you need to parse the result programmatically;
