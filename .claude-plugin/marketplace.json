@@ -8,7 +8,7 @@
       "name": "refshare",
       "source": "./plugins/refshare",
       "description": "Manage and share a personal library of references (sites, tools, services, resources) via chat, email, or any channel.",
-      "version": "0.1.0"
+      "version": "0.1.1"
     }
   ]
 }
