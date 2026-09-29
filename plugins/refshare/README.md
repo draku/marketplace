@@ -72,6 +72,27 @@ python3 scripts/refshare_cli.py share anthropic-docs --format text
 See `skills/refshare/SKILL.md` for the full command reference and agent
 workflow guidance.
 
+## Bundles
+
+Package a set of references into one file to share, back up, or move to
+another machine:
+
+```bash
+python3 scripts/refshare_cli.py export ./ --category acme-corp --tag devtool
+python3 scripts/refshare_cli.py inspect refshare-2026-09-28.refshare.zip
+python3 scripts/refshare_cli.py import refshare-2026-09-28.refshare.zip --dry-run
+python3 scripts/refshare_cli.py import refshare-2026-09-28.refshare.zip
+```
+
+- `export` with no filters is a full backup. Filters (`--category`, `--tag`,
+  `--type`, `--id`) can be repeated.
+- The zip includes an `index.html` that anyone can open in a browser, with
+  links, share text and a note on how to get refshare.
+- `import` never overwrites by default: entries that already exist and differ
+  are skipped and reported. Use `--on-conflict overwrite|rename|newer` to
+  choose otherwise, and `--dry-run` to preview. Every command takes `--json`.
+- An invalid or tampered bundle is rejected as a whole; nothing is written.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).

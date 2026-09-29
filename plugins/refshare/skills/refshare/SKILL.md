@@ -34,6 +34,9 @@ All commands additionally accept `--json` for machine-readable output.
 | `search <keyword>` | `--category`, `--tag` (single value only, not repeatable), `--type` |
 | `show <id>` | (no extra flags) |
 | `share <id>` | `--format text\|html` (required) |
+| `export [OUT]` | `--category` `--tag` `--type` `--id` (each repeatable; same kind = OR, different kinds = AND), `--scope all\|global\|project` (default `all`), `--source NAME`, `--no-html`, `--force`. `OUT` is a file or directory; default name is `refshare-YYYY-MM-DD.refshare.zip` in the current directory. |
+| `inspect <bundle>` | (no extra flags) validates a bundle and lists its contents; writes nothing |
+| `import <bundle>` | `--project` (default target is global), `--category` `--tag` `--type` `--id` (repeatable filters), `--on-conflict skip\|overwrite\|rename\|newer` (default `skip`), `--dry-run` |
 
 `ref_type` must be one of the values in `scripts/ref_types.json`; if a
 command rejects your `--ref-type`, the error message lists the valid types.
@@ -82,3 +85,32 @@ content using whatever tool is already available in the session — an
 installed Slack or Gmail integration, for instance — or simply present the
 text for the user to copy themselves. refshare's own responsibility stops
 at producing that content; it never calls a Slack/email API directly.
+
+## Bundles
+
+A bundle is a `*.refshare.zip` file holding a selection of references, so a
+set can be shared with someone else, backed up, or moved to another machine.
+It also contains an `index.html` that a recipient without refshare can open in
+a browser to read the entries and copy share text.
+
+**Export.** To share part of the library, run `export` with the filters the
+user described (for example `--category acme-corp --tag devtool`). Export
+everything with no filters for a backup. Tell the user where the file was
+written and that it includes an `index.html`. If `--json` reports `warnings`
+(for example an `--id` that matched nothing), relay them.
+
+**Import.** Always look before you merge:
+
+1. Run `inspect <bundle> --json` if the bundle came from someone else; treat it
+   like any downloaded file.
+2. Run `import <bundle> --dry-run --json` and summarize the plan for the user:
+   what would be created, what is unchanged, and which entries conflict and
+   which fields differ.
+3. Only then run the real `import`. The default `--on-conflict skip` never
+   overwrites local entries. Do not pass `overwrite`, `rename` or `newer` unless
+   the user chose it after seeing the conflicts (`rename` keeps both copies,
+   `newer` keeps whichever has the later `updated` date and skips ties).
+
+Imports go to the global library unless the user asks for `--project`. An
+invalid bundle is rejected as a whole and nothing is written. Import never
+deletes anything.
