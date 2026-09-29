@@ -162,8 +162,7 @@ def dump_body_sections(sections: dict) -> str:
 REQUIRED_FIELDS = ("id", "ref_type", "title", "category", "created", "updated")
 
 
-def parse_reference_file(path: Path, scope: str) -> Reference:
-    text = path.read_text(encoding="utf-8")
+def parse_reference_content(text: str, scope: str, path: Path) -> Reference:
     try:
         data, body = parse_reference_text(text)
         for field_name in REQUIRED_FIELDS:
@@ -179,6 +178,14 @@ def parse_reference_file(path: Path, scope: str) -> Reference:
         share_html=sections["share_html"], created=data["created"], updated=data["updated"],
         scope=scope, path=path,
     )
+
+
+def parse_reference_file(path: Path, scope: str) -> Reference:
+    try:
+        text = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as exc:
+        raise ReferenceParseError(f"{path}: not valid UTF-8") from exc
+    return parse_reference_content(text, scope, path)
 
 
 def serialize_reference(ref: Reference) -> str:
@@ -234,6 +241,18 @@ def _scan_dir(directory: Path, scope: str) -> tuple[dict, list[tuple[Path, str]]
             continue
         refs[ref.id] = ref
     return refs, errors
+
+
+def scope_dir(scope: str, cwd: Path | None = None) -> Path:
+    if scope == "global":
+        return global_dir()
+    if scope == "project":
+        return project_dir(cwd)
+    raise ValueError(f"unknown scope {scope!r}")
+
+
+def load_scope(scope: str, cwd: Path | None = None) -> tuple[dict, list[tuple[Path, str]]]:
+    return _scan_dir(scope_dir(scope, cwd), scope)
 
 
 def load_all_references(cwd: Path | None = None) -> tuple[list[Reference], list[tuple[Path, str]]]:

@@ -4,7 +4,9 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from datetime import datetime, timezone
 
+import refshare_bundle as bundle_lib
 import refshare_lib as lib
 
 
@@ -206,6 +208,139 @@ def cmd_share(args, out) -> int:
     return 0
 
 
+def _fail(args, command, message, out, problems=None, warnings=None) -> int:
+    if args.json:
+        report = {"command": command, "error": message, "problems": problems or []}
+        if warnings:
+            report["warnings"] = warnings
+        print(json.dumps(report), file=out)
+    else:
+        print(f"error: {message}", file=sys.stderr)
+        for problem in problems or []:
+            print(f"  {problem['path']}: {problem['message']}", file=sys.stderr)
+        for warning in warnings or []:
+            print(f"warning: {warning}", file=sys.stderr)
+    return 1
+
+
+def _selection_from_args(args) -> dict:
+    return {"categories": args.category or [], "tags": args.tag or [],
+            "types": args.type or [], "ids": args.id or []}
+
+
+def cmd_export(args, out) -> int:
+    if args.scope == "all":
+        refs, errors = lib.load_all_references()
+    else:
+        found, errors = lib.load_scope(args.scope)
+        refs = sorted(found.values(), key=lambda r: r.id)
+    warnings = [f"{path}: {msg}" for path, msg in errors]
+    known = {r.id for r in refs}
+    warnings += [f"no reference with id {i!r}" for i in args.id or [] if i not in known]
+
+    selection = _selection_from_args(args)
+    selected, excluded = bundle_lib.partition_exportable(
+        bundle_lib.select_references(refs, **selection))
+    warnings += [f"skipped {ref.id!r} ({ref.path}): {'; '.join(problems)}"
+                 for ref, problems in excluded]
+    if not selected:
+        return _fail(args, "export", "no references match the selection", out,
+                     warnings=warnings)
+
+    now = datetime.now(timezone.utc)
+    out_path = bundle_lib.resolve_output_path(args.out, now.date().isoformat())
+    if out_path.exists() and not args.force:
+        return _fail(args, "export", f"{out_path} already exists (use --force to overwrite)", out)
+    try:
+        manifest = bundle_lib.build_bundle(
+            selected, out_path, selection={"scope": args.scope, **selection},
+            source=args.source, include_html=not args.no_html, now=now)
+    except (bundle_lib.BundleError, OSError) as exc:
+        return _fail(args, "export", str(exc), out,
+                     getattr(exc, "problems", None))
+    ids = [entry["id"] for entry in manifest["entries"]]
+    if args.json:
+        print(json.dumps({"command": "export", "bundle": str(out_path), "count": len(ids),
+                          "ids": ids, "warnings": warnings}), file=out)
+    else:
+        print(f"exported {len(ids)} reference(s) to {out_path}", file=out)
+        for warning in warnings:
+            print(f"warning: {warning}", file=sys.stderr)
+    return 0
+
+
+def cmd_inspect(args, out) -> int:
+    bundle = bundle_lib.load_bundle(args.bundle)
+    if args.json:
+        print(json.dumps({
+            "command": "inspect", "valid": bundle.valid, "manifest": bundle.manifest,
+            "problems": bundle.problems,
+            "entries": [{"id": e.id, "valid": e.valid, "problems": e.problems}
+                        for e in bundle.entries],
+        }), file=out)
+        return 0 if bundle.valid else 1
+    manifest = bundle.manifest
+    if manifest:
+        source = f"  source: {manifest['source']}" if manifest.get("source") else ""
+        print(f"bundle: {bundle.path}  format v{manifest.get('format_version')}"
+              f"  created {manifest.get('created')}{source}", file=out)
+    for problem in bundle.problems:
+        print(f"problem: {problem['path']}: {problem['message']}", file=out)
+    for entry in bundle.entries:
+        if entry.valid:
+            print(f"ok       {entry.id}  {entry.ref.title}", file=out)
+        else:
+            print(f"INVALID  {entry.id}", file=out)
+            for problem in entry.problems:
+                print(f"         {problem['message']}", file=out)
+    print("valid" if bundle.valid else "invalid", file=out)
+    return 0 if bundle.valid else 1
+
+
+def _emit_import(plan, args, out, dry_run: bool) -> None:
+    if args.json:
+        print(json.dumps(plan.to_dict(dry_run=dry_run, bundle=args.bundle)), file=out)
+        return
+    s = plan.summary()
+    suffix = "  [dry run]" if dry_run else ""
+    print(f"import: {s['created']} created, {s['unchanged']} unchanged, "
+          f"{s['skipped_conflict']} skipped (conflict), {s['overwritten']} overwritten, "
+          f"{s['renamed']} renamed, {s['not_selected']} not selected{suffix}", file=out)
+    for item in plan.items:
+        if item.action == "skipped_conflict":
+            print(f"  skipped      {item.id}  (differs: {', '.join(item.differs)})", file=out)
+        elif item.action == "renamed":
+            print(f"  renamed      {item.id} -> {item.final_id}", file=out)
+        else:
+            print(f"  {item.action:<12} {item.id}", file=out)
+    for warning in plan.warnings:
+        print(f"warning: {warning}", file=sys.stderr)
+
+
+def cmd_import(args, out) -> int:
+    try:
+        bundle = bundle_lib.read_bundle(args.bundle)
+    except bundle_lib.BundleError as exc:
+        return _fail(args, "import", str(exc), out, exc.problems)
+    try:
+        plan = bundle_lib.plan_import(
+            bundle, "project" if args.project else "global", on_conflict=args.on_conflict,
+            **_selection_from_args(args))
+        if not args.dry_run:
+            bundle_lib.apply_plan(plan)
+    except (bundle_lib.BundleError, OSError) as exc:
+        return _fail(args, "import", str(exc), out, getattr(exc, "problems", None))
+    _emit_import(plan, args, out, args.dry_run)
+    return 0
+
+
+def _add_selection_flags(parser) -> None:
+    parser.add_argument("--category", action="append")
+    parser.add_argument("--tag", action="append")
+    parser.add_argument("--type", action="append")
+    parser.add_argument("--id", action="append")
+
+
 common = argparse.ArgumentParser(add_help=False)
 common.add_argument("--json", action="store_true", help="machine-readable output")
 
@@ -267,6 +402,28 @@ def build_parser() -> argparse.ArgumentParser:
     share_p.add_argument("id")
     share_p.add_argument("--format", choices=["text", "html"], required=True)
     share_p.set_defaults(func=cmd_share)
+
+    export_p = sub.add_parser("export", parents=[common])
+    export_p.add_argument("out", nargs="?")
+    _add_selection_flags(export_p)
+    export_p.add_argument("--scope", choices=["all", "global", "project"], default="all")
+    export_p.add_argument("--source")
+    export_p.add_argument("--no-html", dest="no_html", action="store_true")
+    export_p.add_argument("--force", action="store_true")
+    export_p.set_defaults(func=cmd_export)
+
+    inspect_p = sub.add_parser("inspect", parents=[common])
+    inspect_p.add_argument("bundle")
+    inspect_p.set_defaults(func=cmd_inspect)
+
+    import_p = sub.add_parser("import", parents=[common])
+    import_p.add_argument("bundle")
+    _add_selection_flags(import_p)
+    import_p.add_argument("--project", action="store_true")
+    import_p.add_argument("--on-conflict", dest="on_conflict", default="skip",
+                          choices=list(bundle_lib.CONFLICT_POLICIES))
+    import_p.add_argument("--dry-run", dest="dry_run", action="store_true")
+    import_p.set_defaults(func=cmd_import)
 
     return parser
 
